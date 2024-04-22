@@ -1,10 +1,13 @@
+env: 'local' #local, dev, prod
 type: 'client'
-client.ipv4: '127.0.0.1'
-client.ipv6: '127.0.0.1'
-client.max: '12.12.12.12'
-client.port: '10000'
+client:
+  ipv4: '127.0.0.1'
+  ipv6: '127.0.0.1'
+  mac: '12.12.12.12'
+  port: '10000'
 
-server.ipv4: '127.0.0.1'
-server.ipv6: '127.0.0.1'
-server.max: '12.12.12.12'
-server.port: '10000'
+server:
+  ipv4: '127.0.0.1'
+  ipv6: '127.0.0.1'
+  mac: '12.12.12.12'
+  port: '10000'
