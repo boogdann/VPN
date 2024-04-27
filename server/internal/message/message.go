@@ -8,19 +8,21 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
+	"github.com/boogdann/VPN/server/internal/csum"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"io"
-	"net"
-	"strconv"
+	"log/slog"
 )
 
 const (
+	startCheckSum = 60
 	espHeaderSize = 4 * 2
 )
 
 var (
 	ErrInvalidPacketType = fmt.Errorf("invalid packet type")
+	ErrInvalidKeySize    = fmt.Errorf("invalid key size")
 )
 
 func (m *Message) Handle(p []byte, send func([]byte)) {
@@ -36,14 +38,117 @@ func (m *Message) Handle(p []byte, send func([]byte)) {
 }
 
 func (m *Message) handleTCPPacket(packet gopacket.Packet, send func([]byte)) error {
-	network := packet.NetworkLayer()
-	_ = network
-
 	transport, ok := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 	if !ok || transport == nil {
+		m.log.Error("invalid packet type", slog.String("type", "tcp"))
 		return ErrInvalidPacketType
 	}
 
+	payloadWithTrailer := m.getPayloadWithTrailer(packet)
+
+	cipheredPayload, iv, err := m.cipherPayload(payloadWithTrailer)
+	if err != nil {
+		m.log.Error("cipher payload", slog.String("error", err.Error()))
+		return err
+	}
+
+	espPacket, err := m.buildESP(cipheredPayload, iv)
+	if err != nil {
+		m.log.Error("build esp packet", slog.String("error", err.Error()))
+		return err
+	}
+
+	send(espPacket)
+	m.log.Info("sent packet")
+
+	return nil
+}
+
+func (m *Message) handleUDPPacket(packet gopacket.Packet, send func([]byte)) error {
+
+	return nil
+}
+
+func (m *Message) setCheckSum(b []byte, cs uint16) {
+	binary.BigEndian.PutUint16(b[startCheckSum:], cs)
+}
+
+func (m *Message) getPadding(payloadLen int) int {
+	padLen := 0
+	if (payloadLen+2)%aes.BlockSize != 0 {
+		padLen = 1
+		for ((payloadLen + 2 + padLen) % aes.BlockSize) != 0 {
+			padLen++
+		}
+	}
+	return padLen
+}
+
+func (m *Message) cipherPayload(payload []byte) ([]byte, []byte, error) {
+	block, err := aes.NewCipher(m.key)
+	if err != nil {
+		m.log.Error("new cipher", slog.String("error", err.Error()))
+		return nil, nil, ErrInvalidKeySize
+	}
+
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		m.log.Error("read iv", slog.String("error", err.Error()))
+		return nil, nil, err
+	}
+
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(payload, payload)
+
+	return payload, iv, nil
+}
+
+func (m *Message) buildESP(payload []byte, iv []byte) ([]byte, error) {
+	espLayer := make([]byte, espHeaderSize+aes.BlockSize+len(payload))
+	binary.BigEndian.PutUint32(espLayer[:4], m.spi)
+	copy(espLayer[8:8+aes.BlockSize], iv)
+	copy(espLayer[8+aes.BlockSize:], payload)
+
+	mac := hmac.New(sha512.New512_256, m.key)
+	mac.Write(espLayer)
+	msgMAC := mac.Sum(nil)
+
+	espPacket := gopacket.NewSerializeBuffer()
+	err := gopacket.SerializeLayers(espPacket, gopacket.SerializeOptions{},
+		&layers.Ethernet{
+			SrcMAC:       m.config.Client.MAC,
+			DstMAC:       m.config.Server.MAC,
+			EthernetType: layers.EthernetTypeIPv6,
+		},
+		&layers.IPv6{
+			Version:    6,
+			Length:     uint16(8 + len(espLayer) + sha512.Size256),
+			NextHeader: layers.IPProtocolUDP,
+			HopLimit:   64,
+			SrcIP:      m.config.Client.IPv6,
+			DstIP:      m.config.Server.IPv6,
+		},
+		&layers.UDP{
+			SrcPort: layers.UDPPort(m.config.Client.Port),
+			DstPort: layers.UDPPort(m.config.Server.Port),
+			Length:  uint16(8 + len(espLayer) + sha512.Size256),
+		},
+		gopacket.Payload(espLayer),
+		gopacket.Payload(msgMAC),
+	)
+	if err != nil {
+		m.log.Error("serialize layers", slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	cs := csum.CalculateUDPIPv6(m.config.Client.IPv6, m.config.Server.IPv6, espPacket.Bytes()[62:])
+	m.setCheckSum(espPacket.Bytes(), cs)
+
+	return espPacket.Bytes(), nil
+}
+
+func (m *Message) getPayloadWithTrailer(packet gopacket.Packet) []byte {
+	network := packet.NetworkLayer()
 	nextHeader := int(layers.IPProtocolIPv4)
 	if network.LayerType() == layers.LayerTypeIPv6 {
 		nextHeader = int(layers.IPProtocolIPv6)
@@ -52,86 +157,10 @@ func (m *Message) handleTCPPacket(packet gopacket.Packet, send func([]byte)) err
 	payload := network.LayerPayload()
 	payloadLen := len(payload)
 
-	padLength := 0
-	if (payloadLen+2)%aes.BlockSize != 0 {
-		padLength = 1
-		for ((payloadLen + 2 + padLength) % aes.BlockSize) != 0 {
-			padLength++
-		}
-		padding := make([]byte, padLength)
-		payload = append(payload, padding...)
+	padLength := m.getPadding(payloadLen)
+	if padLength > 0 {
+		payload = append(payload, make([]byte, padLength)...)
 	}
 
-	payloadWithTrailer := append(payload, byte(padLength), byte(nextHeader))
-
-	block, err := aes.NewCipher(m.key)
-	if err != nil {
-		return err
-	}
-
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return err
-	}
-
-	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(payloadWithTrailer, payloadWithTrailer)
-
-	espLayer := make([]byte, espHeaderSize+aes.BlockSize+len(payloadWithTrailer))
-	key := binary.LittleEndian.AppendUint32(nil, m.spi)
-	copy(espLayer[:4], key)
-	copy(espLayer[8:8+aes.BlockSize], iv)
-	copy(espLayer[8+aes.BlockSize:], payloadWithTrailer)
-
-	mac := hmac.New(sha512.New512_256, m.key)
-	mac.Write(espLayer)
-	msgMAC := mac.Sum(nil)
-
-	srcMAC, _ := net.ParseMAC(m.config.Client.MAC)
-	dstMAC, _ := net.ParseMAC(m.config.Server.MAC)
-	srcIP := net.ParseIP(m.config.Client.IPv6)
-	dstIP := net.ParseIP(m.config.Server.IPv6)
-
-	val, _ := strconv.ParseInt(m.config.Client.Port, 10, 32)
-	srcPort := layers.UDPPort(val)
-	val, _ = strconv.ParseInt(m.config.Server.Port, 10, 32)
-	dstPort := layers.UDPPort(val)
-
-	espPacket := gopacket.NewSerializeBuffer()
-	err = gopacket.SerializeLayers(espPacket, gopacket.SerializeOptions{},
-		&layers.Ethernet{
-			SrcMAC:       srcMAC,
-			DstMAC:       dstMAC,
-			EthernetType: layers.EthernetTypeIPv6,
-		},
-		&layers.IPv6{
-			Version:    6,
-			Length:     uint16(8 + len(espLayer) + sha512.Size256),
-			NextHeader: layers.IPProtocolUDP,
-			HopLimit:   64,
-			SrcIP:      srcIP,
-			DstIP:      dstIP,
-		},
-		&layers.UDP{
-			SrcPort: srcPort,
-			DstPort: dstPort,
-			Length:  uint16(8 + len(espLayer) + sha512.Size256),
-		},
-		gopacket.Payload(espLayer),
-		gopacket.Payload(msgMAC),
-	)
-
-	if err != nil {
-		return err
-	}
-
-	send(espPacket.Bytes())
-
-	fmt.Println(espPacket)
-	return nil
-}
-
-func (m *Message) handleUDPPacket(packet gopacket.Packet, send func([]byte)) error {
-
-	return nil
+	return append(payload, byte(padLength), byte(nextHeader))
 }

@@ -17,6 +17,6 @@ func New(config *config.Config, key []byte, spi uint32, log *slog.Logger) *Messa
 		config: config,
 		key:    key,
 		spi:    spi,
-		log:    log,
+		log:    log.With("message."),
 	}
 }

@@ -20,7 +20,7 @@ func Run() {
 
 	log := setupLogger(cfg.Env)
 
-	msgs := message.New(cfg, []byte{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1}, uint32(rand.Int31()), log)
+	msgs := message.New(cfg, []byte{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1}, rand.Uint32(), log)
 
 	// snif := sniffer.New("wlp1s0", 65535, msgs, cfg, log)
 	snif := sniffer.New("lo", 65535, msgs, cfg, log)
