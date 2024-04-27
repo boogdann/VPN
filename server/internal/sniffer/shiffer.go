@@ -1,15 +1,15 @@
 package sniffer
 
-п(
-"fmt"
-"log/slog"
+import (
+	"fmt"
+	"log/slog"
 
-"github.com/google/gopacket"
-"github.com/google/gopacket/pcap"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/pcap"
 )
 
 func (s *Sniffer) Start() error {
-	s.log.Info("Starting sniffer")
+	s.log.Info("starting sniffer")
 	err := s.listenInterface()
 	if err != nil {
 		s.log.Error("Error during starting sniffer: ",
@@ -17,7 +17,7 @@ func (s *Sniffer) Start() error {
 		return err
 	}
 
-	s.log.Info("Sinffer stopped")
+	s.log.Info("sniffer stopped")
 	return nil
 }
 
@@ -31,44 +31,64 @@ func (s *Sniffer) listenInterface() error {
 		return err
 	}
 
-	filter := fmt.Sprintf("(tcp and dst pord %s)", s.config.Client.Port)
-	if err := handle.SetBPFFilter(filter); err != nil {
-		log.Error("set interface filter",
-			slog.String("error", err.Error()))
-		return err
+	if s.config.Type == "client" {
+		filter := fmt.Sprintf("((tcp or udp) and (src host %s or %s) and src port %d) or (udp and src host %s and dst port %d)",
+			s.config.Client.IPv4, s.config.Client.IPv6, s.config.Client.Port, s.config.Server.IPv4, s.config.Server.Port)
+		err := handle.SetBPFFilter(filter)
+		if err != nil {
+			log.Error("set interface filter",
+				slog.String("error", err.Error()))
+			return err
+		}
+	} else {
+		filter := fmt.Sprintf("(tcp and dst port %s)", s.config.Client.Port)
+		err := handle.SetBPFFilter(filter)
+		if err != nil {
+			log.Error("set interface filter",
+				slog.String("error", err.Error()))
+			return err
+		}
 	}
 
-	s.recv = gopacket.NewPacketSource(handle, handle.LinkType()).Packets()
+	/*	filter := fmt.Sprintf("(tcp and dst port %s)", s.config.Client.Port)
+		if err := handle.SetBPFFilter(filter); err != nil {
+			log.Error("set interface filter",
+				slog.String("error", err.Error()))
+			return err
+		}*/
 
+	recv := gopacket.NewPacketSource(handle, handle.LinkType()).Packets()
 	for {
 		select {
-		case packet := <-s.recv:
+		case packet := <-recv:
 			s.log.Info("get packet")
-			s.handler.Handle(packet)
+			s.handler.Handle(packet.Data(), s.Send)
 		case packet := <-s.send:
-			if err := s.sendMsg(handle, packet); err != nil {
-				// TODO: handle error
-			}
+			// TODO: handle error
+			go s.sendMsg(handle, packet)
 		case <-s.close:
 			return nil
 		}
 	}
 }
 
-func (s *Sniffer) Send(packet gopacket.SerializeBuffer) {
+func (s *Sniffer) Send(packet []byte) {
 	s.send <- packet
+}
+
+func (s *Sniffer) sendMsg(handle *pcap.Handle, packet []byte) error {
+	if err := handle.WritePacketData(packet); err != nil {
+		s.log.Error("sending packet", slog.String("error", err.Error()))
+		return err
+	}
+
+	fmt.Println(packet)
+
+	s.log.Info("sent packet")
+	return nil
 }
 
 func (s *Sniffer) Close() {
 	s.log.Info("Stopping sniffer")
 	s.close <- struct{}{}
-}
-
-func (s *Sniffer) sendMsg(handle *pcap.Handle, packet gopacket.SerializeBuffer) error {
-	if err := handle.WritePacketData(packet.Bytes()); err != nil {
-		s.log.Error("sending packet", slog.String("error", err.Error()))
-		return err
-	}
-
-	return nil
 }

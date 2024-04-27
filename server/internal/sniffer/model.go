@@ -2,7 +2,6 @@ package sniffer
 
 import (
 	"github.com/boogdann/VPN/server/internal/config"
-	"github.com/google/gopacket"
 	"log/slog"
 )
 
@@ -12,7 +11,7 @@ const (
 )
 
 type PacketHandler interface {
-	Handle(packet gopacket.Packet)
+	Handle(packet []byte, sender func(packet []byte))
 }
 
 type Sniffer struct {
@@ -20,8 +19,7 @@ type Sniffer struct {
 	config       *config.Config
 	name         string
 	maxSize      int32
-	send         chan gopacket.SerializeBuffer
-	recv         chan gopacket.Packet
+	send         chan []byte
 	isPromcsMode bool
 
 	close chan struct{}
@@ -35,7 +33,7 @@ func New(name string, size int, handler PacketHandler, cfg *config.Config, log *
 		name:         name,
 		maxSize:      int32(size),
 		isPromcsMode: true,
-		send:         make(chan gopacket.SerializeBuffer, sizeSendChan),
+		send:         make(chan []byte, sizeSendChan),
 		handler:      handler,
 
 		close: make(chan struct{}, 1),

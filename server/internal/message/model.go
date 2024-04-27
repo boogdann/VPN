@@ -1,13 +1,22 @@
 package message
 
-import "log/slog"
+import (
+	"github.com/boogdann/VPN/server/internal/config"
+	"log/slog"
+)
 
 type Message struct {
-	log *slog.Logger
+	config *config.Config
+	key    []byte
+	spi    uint32
+	log    *slog.Logger
 }
 
-func New(log *slog.Logger) *Message {
+func New(config *config.Config, key []byte, spi uint32, log *slog.Logger) *Message {
 	return &Message{
-		log: log,
+		config: config,
+		key:    key,
+		spi:    spi,
+		log:    log,
 	}
 }
