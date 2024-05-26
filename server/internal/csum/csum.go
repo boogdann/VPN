@@ -17,7 +17,7 @@ func CalculateUDPIPv6(srcIP, dstIP net.IP, data []byte) uint16 {
 	binary.BigEndian.PutUint32(pseudoHeader[32:36], uint32(len(data)))
 	pseudoHeader[39] = protocolUDP
 
-	// мб set checksum bytes to zero
+	// maybe set checksum bytes to zero
 
 	var sum uint32
 	for i := 0; i < len(pseudoHeader); i += 2 {

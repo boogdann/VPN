@@ -2,6 +2,7 @@ package sniffer
 
 import (
 	"github.com/boogdann/VPN/server/internal/config"
+	"github.com/google/gopacket"
 	"log/slog"
 )
 
@@ -11,11 +12,17 @@ const (
 )
 
 type PacketHandler interface {
-	Handle(packet []byte, sender func(packet []byte))
+	Handle(packet gopacket.Packet, sender func(packet []byte))
+}
+
+type Sender interface {
+	Send(packet []byte)
 }
 
 type Sniffer struct {
-	handler      PacketHandler
+	handler PacketHandler
+	sender  Sender
+
 	config       *config.Config
 	name         string
 	maxSize      int32
@@ -26,7 +33,7 @@ type Sniffer struct {
 	log   *slog.Logger
 }
 
-func New(name string, size int, handler PacketHandler, cfg *config.Config, log *slog.Logger) *Sniffer {
+func New(name string, size int, sender Sender, handler PacketHandler, cfg *config.Config, log *slog.Logger) *Sniffer {
 	return &Sniffer{
 		config: cfg,
 
@@ -35,6 +42,7 @@ func New(name string, size int, handler PacketHandler, cfg *config.Config, log *
 		isPromcsMode: true,
 		send:         make(chan []byte, sizeSendChan),
 		handler:      handler,
+		sender:       sender,
 
 		close: make(chan struct{}, 1),
 		log:   log,
