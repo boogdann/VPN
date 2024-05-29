@@ -113,5 +113,7 @@ func setConfig(rawCfg *config) (*Config, error) {
 
 	cfg.SendInfName = rawCfg.SendInfName
 
+	fmt.Println(cfg)
+
 	return cfg, nil
 }

@@ -34,7 +34,7 @@ func (c *Crypter) Encrypt(packet gopacket.Packet) ([]byte, error) {
 }
 
 func (c *Crypter) setCheckSum(b []byte, cs uint16) {
-	binary.BigEndian.PutUint16(b[startCheckSum:], cs)
+	binary.BigEndian.PutUint16(b[40:], cs)
 }
 
 func (c *Crypter) getPadding(payloadLen int) int {
@@ -83,15 +83,16 @@ func (c *Crypter) buildESP(payload []byte, iv []byte) ([]byte, error) {
 		&layers.Ethernet{
 			SrcMAC:       c.config.Client.MAC,
 			DstMAC:       c.config.Server.MAC,
-			EthernetType: layers.EthernetTypeIPv6,
+			EthernetType: layers.EthernetTypeIPv4, // TODO: ipv6
 		},
-		&layers.IPv6{
-			Version:    6,
-			Length:     uint16(8 + len(espLayer) + sha512.Size256),
-			NextHeader: layers.IPProtocolUDP,
-			HopLimit:   64,
-			SrcIP:      c.config.Client.IPv6,
-			DstIP:      c.config.Server.IPv6,
+		&layers.IPv4{
+			Protocol: layers.IPProtocolUDP,
+			Version:  4,
+			IHL:      5,
+			Length:   uint16(8+len(espLayer)+sha512.Size256) + 20, //
+			TTL:      64,
+			SrcIP:    c.config.Client.IPv4,
+			DstIP:    c.config.Server.IPv4,
 		},
 		&layers.UDP{
 			SrcPort: layers.UDPPort(c.config.Client.Port),
@@ -105,8 +106,7 @@ func (c *Crypter) buildESP(payload []byte, iv []byte) ([]byte, error) {
 		c.log.Error("serialize layers", slog.String("error", err.Error()))
 		return nil, err
 	}
-
-	cs := csum.CalculateUDPIPv6(c.config.Client.IPv6, c.config.Server.IPv6, espPacket.Bytes()[62:])
+	cs := csum.CalculateUDPIPv4(c.config.Client.IPv4, c.config.Server.IPv4, espPacket.Bytes()[62:])
 	c.setCheckSum(espPacket.Bytes(), cs)
 
 	return espPacket.Bytes(), nil

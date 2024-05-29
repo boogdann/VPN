@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	startCheckSum = 60
-	espHeaderSize = 4 * 2
+	startCheckSumIPv6 = 60
+	startCheckSumIPv4 = 24
+	espHeaderSize     = 4 * 2
 )
 
 var (

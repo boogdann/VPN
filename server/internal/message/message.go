@@ -75,6 +75,7 @@ func (m *Message) handleUDPPacket(packet gopacket.Packet, send func([]byte)) err
 }
 
 func (m *Message) Send(packet []byte) {
+	fmt.Printf("S %x\n", packet)
 	if err := m.handle.WritePacketData(packet); err != nil {
 		m.log.Error("sending packet", slog.String("error", err.Error()))
 		return

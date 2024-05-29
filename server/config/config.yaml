@@ -5,7 +5,7 @@ send_interface_name: 'wlp1s0'
 client:
   ipv4: '192.168.100.53'
   ipv6: 'fe80::68e7:4071:d1b:9e69'
-  mac: 'ec:63:d7:70:fb:66'
+  mac: '92:12:79:36:bf:94'
   port: '10000'
 
 server:

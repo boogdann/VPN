@@ -2,6 +2,7 @@ package csum
 
 import (
 	"encoding/binary"
+	"github.com/google/gopacket/layers"
 	"net"
 )
 
@@ -35,4 +36,43 @@ func CalculateUDPIPv6(srcIP, dstIP net.IP, data []byte) uint16 {
 	sum += sum >> 16
 
 	return ^uint16(sum)
+}
+
+func CalculateUDPIPv4(srcaddr, dstaddr, udpdata []byte) uint16 {
+	var csum uint32
+	var udplen uint32 = uint32(len(udpdata))
+
+	// clear checksum bytes
+	udpdata[6] = 0
+	udpdata[7] = 0
+
+	csum += uint32(srcaddr[0]) << 8
+	csum += uint32(srcaddr[1])
+	csum += uint32(srcaddr[2]) << 8
+	csum += uint32(srcaddr[3])
+
+	csum += uint32(dstaddr[0]) << 8
+	csum += uint32(dstaddr[1])
+	csum += uint32(dstaddr[2]) << 8
+	csum += uint32(dstaddr[3])
+
+	csum += uint32(layers.IPProtocolUDP)
+	csum += udplen
+
+	end := len(udpdata) - 1
+
+	for i := 0; i < end; i += 2 {
+		csum += uint32(udpdata[i]) << 8
+		csum += uint32(udpdata[i+1])
+	}
+
+	if len(udpdata)%2 == 1 {
+		csum += uint32(udpdata[end]) << 8
+	}
+
+	for csum > 0xffff {
+		csum = (csum >> 16) + (csum & 0xffff)
+	}
+	return ^uint16(csum)
+
 }
