@@ -2,12 +2,12 @@ package crypt
 
 import (
 	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
-	"github.com/boogdann/VPN/server/internal/csum"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"io"
@@ -17,6 +17,9 @@ import (
 func (c *Crypter) Encrypt(packet gopacket.Packet) ([]byte, error) {
 	fmt.Println(packet.Data())
 	payloadWithTrailer := c.getPayloadWithTrailer(packet)
+
+	fmt.Println("standard packet")
+	fmt.Println(packet.Data())
 
 	cipheredPayload, iv, err := c.cipherPayload(payloadWithTrailer)
 	if err != nil {
@@ -62,8 +65,8 @@ func (c *Crypter) cipherPayload(payload []byte) ([]byte, []byte, error) {
 	}
 
 	_ = block
-	//mode := cipher.NewCBCEncrypter(block, iv)
-	//mode.CryptBlocks(payload, payload)
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(payload, payload)
 
 	return payload, iv, nil
 }
@@ -74,6 +77,17 @@ func (c *Crypter) buildESP(payload []byte, iv []byte) ([]byte, error) {
 	copy(espLayer[8:8+aes.BlockSize], iv)
 	copy(espLayer[8+aes.BlockSize:], payload)
 
+	fmt.Println("spi")
+	fmt.Println(c.spi)
+
+	fmt.Println("iv")
+	fmt.Println(iv)
+
+	fmt.Println("payload")
+	fmt.Println(payload)
+
+	fmt.Println("esp layer")
+	fmt.Println(espLayer)
 	mac := hmac.New(sha512.New512_256, c.key)
 	mac.Write(espLayer)
 	msgMAC := mac.Sum(nil)
@@ -95,8 +109,8 @@ func (c *Crypter) buildESP(payload []byte, iv []byte) ([]byte, error) {
 			DstIP:    c.config.Server.IPv4,
 		},
 		&layers.UDP{
-			SrcPort: layers.UDPPort(c.config.Client.Port),
-			DstPort: layers.UDPPort(c.config.Server.Port),
+			SrcPort: layers.UDPPort(c.config.Server.Port), //
+			DstPort: layers.UDPPort(c.config.Client.Port), //
 			Length:  uint16(8 + len(espLayer) + sha512.Size256),
 		},
 		gopacket.Payload(espLayer),
@@ -106,11 +120,31 @@ func (c *Crypter) buildESP(payload []byte, iv []byte) ([]byte, error) {
 		c.log.Error("serialize layers", slog.String("error", err.Error()))
 		return nil, err
 	}
-	cs := csum.CalculateUDPIPv4(c.config.Client.IPv4, c.config.Server.IPv4, espPacket.Bytes()[62:])
-	c.setCheckSum(espPacket.Bytes(), cs)
+	//cs := csum.CalculateUDPIPv4(c.config.Client.IPv4, c.config.Server.IPv4, espPacket.Bytes()[62:])
+	//c.setCheckSum(espPacket.Bytes(), cs)
 
+	fmt.Println("esp packet")
+	fmt.Println(espPacket.Bytes())
 	return espPacket.Bytes(), nil
 }
+
+//func (c *Crypter) getPayloadWithTrailer(packet gopacket.Packet) []byte {
+//	network := packet.NetworkLayer()
+//	nextHeader := int(layers.IPProtocolIPv4)
+//	if network.LayerType() == layers.LayerTypeIPv6 {
+//		nextHeader = int(layers.IPProtocolIPv6)
+//	}
+//
+//	payload := network.LayerPayload()
+//	payloadLen := len(payload)
+//
+//	padLength := c.getPadding(payloadLen)
+//	if padLength > 0 {
+//		payload = append(payload, make([]byte, padLength)...)
+//	}
+//
+//	return append(payload, byte(padLength), byte(nextHeader))
+//}
 
 func (c *Crypter) getPayloadWithTrailer(packet gopacket.Packet) []byte {
 	network := packet.NetworkLayer()
@@ -119,7 +153,7 @@ func (c *Crypter) getPayloadWithTrailer(packet gopacket.Packet) []byte {
 		nextHeader = int(layers.IPProtocolIPv6)
 	}
 
-	payload := network.LayerPayload()
+	payload := packet.Data()
 	payloadLen := len(payload)
 
 	padLength := c.getPadding(payloadLen)

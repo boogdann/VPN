@@ -11,9 +11,15 @@ import (
 	"net"
 )
 
-const udpPayloadOffset = 62
+const udpPayloadOffset = 44
 
-func (c *Crypter) Decrypt(packet gopacket.Packet) ([]byte, error) {
+func (c *Crypter) Decrypt(packet gopacket.Packet) (_ []byte, _err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			_err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	espLayer := packet.Data()[udpPayloadOffset : len(packet.Data())-sha512.Size256]
 	msgMAC := packet.Data()[len(packet.Data())-sha512.Size256:]
 
@@ -54,9 +60,9 @@ func (c *Crypter) Decrypt(packet gopacket.Packet) ([]byte, error) {
 	var newPacket []byte
 	switch nextHeader {
 	case int(layers.IPProtocolIPv4):
-		newPacket, err = c.buildIpv4Packet(srcMAC, dstMAC, payload[len(payload)-2-padLength:])
+		newPacket, err = c.buildIpv4Packet(srcMAC, dstMAC, payload[:len(payload)-2-padLength])
 	case int(layers.IPProtocolIPv6):
-		newPacket, err = c.buildIpv6Packet(srcMAC, dstMAC, payload[len(payload)-2-padLength:])
+		newPacket, err = c.buildIpv6Packet(srcMAC, dstMAC, payload[:len(payload)-2-padLength])
 	}
 
 	if err != nil {
@@ -69,8 +75,11 @@ func (c *Crypter) Decrypt(packet gopacket.Packet) ([]byte, error) {
 
 func (c *Crypter) buildIpv4Packet(srcMAC, dstMAC net.HardwareAddr, payload []byte) ([]byte, error) {
 	newPacket := gopacket.NewSerializeBuffer()
-	packetPayload := gopacket.NewPacket(payload, layers.LayerTypeIPv4, gopacket.Default)
+	packetPayload := gopacket.NewPacket(payload, layers.LayerTypeUDP, gopacket.Default)
 
+	//
+	return payload, nil
+	//
 	ipLayer, ok := packetPayload.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	if !ok {
 		return nil, fmt.Errorf("invalid packet type")

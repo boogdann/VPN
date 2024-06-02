@@ -1,15 +1,15 @@
 env: 'local' #local, dev, prod
-type: 'server'
-interface_name: 'lo'
-send_interface_name: 'wlp1s0'
+type: 'client'
+interface_name: 'any'
+send_interface_name: 'lo'
 client:
-  ipv4: '192.168.100.53'
-  ipv6: 'fe80::68e7:4071:d1b:9e69'
-  mac: '92:12:79:36:bf:94'
+  ipv4: '192.168.100.100'
+  ipv6: '2001:db8:2::10'
+  mac:  '02:42:c0:a8:6f:02'
   port: '10000'
 
 server:
-  ipv4: '192.168.100.2'
-  ipv6: 'fe80::dd3a:5945:8372:62ed'
-  mac: '70:85:c2:45:61:18'
-  port: '12000'
+  ipv4: '192.168.111.3'
+  ipv6: '2001:db8:2::11'
+  mac:  '02:42:c0:a8:6f:03'
+  port: '10000'
